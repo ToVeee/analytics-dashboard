@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analytics Dashboard</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+
+        body {
+            background-color: #f4f6f9;
+            color: #333;
+            padding: 20px;
+        }
+
+        header {
+            background: #800000;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status-badge {
+            background: #28a745;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .status-badge.disconnected {
+            background: #dc3545;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h2 {
+            margin-bottom: 15px;
+            color: #800000;
+        }
+
+        #complaintList {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .complaint-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            border-left: 5px solid #ccc;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        /* Color coding by severity score */
+        .severity-low {
+            border-left-color: #28a745;
+        }
+
+        .severity-medium {
+            border-left-color: #ffc107;
+        }
+
+        .severity-high {
+            border-left-color: #c63a48;
+        }
+
+        .severity-critical {
+            border-left-color: #800000;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .card-name {
+            font-weight: bold;
+            color: #333;
+        }
+
+        .card-body {
+            font-size: 16px;
+            line-height: 1.5;
+            margin-bottom: 10px;
+        }
+
+        .card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+        }
+
+        .score-tag {
+            background: #eee;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+            background: white;
+            border-radius: 8px;
+        }
+
+        .show-details {
+            width: 75px;
+            height: 20px;
+            font-size: 12px;
+            background-color: #8000006e;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        .details {
+            display: none;
+        }
+
+        #categories {
+            gap: 10px;
+            height: 30px;
+            margin-bottom: 20px;
+            overflow-x: scroll;
+            white-space: nowrap;
+
+        }
+
+        #categories::-webkit-scrollbar {
+            display: none;
+        }
+
+        #categories .check {
+            background: #800000;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 20px;
+            display: inline-block;
+            align-items: center;
+            gap: 5px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <header>
+            <div>
+                <h1>Analytics Dashboard</h1>
+                <p>Real-time School Complaint Monitoring Feed</p>
+            </div>
+            <div id="status" class="status-badge disconnected">Connecting...</div>
+        </header>
+
+        <h2>Live Feed</h2>
+
+
+
+        <div id="categories">
+            <div class="check"><input type="checkbox" name="noise" value="true"> Violence</div>
+            <div class="check"><input type="checkbox" name="cleanliness" value="true"> Sanitation</div>
+            <div class="check"><input type="checkbox" name="academic" value="true"> Academic Concern</div>
+            <div class="check"><input type="checkbox" name="bullying" value="true"> Bullying</div>
+            <div class="check"><input type="checkbox" name="harassment" value="true"> Harassment</div>
+            <div class="check"><input type="checkbox" name="dispute" value="true"> Student Dispute</div>
+            <div class="check"><input type="checkbox" name="teacherConcern" value="true"> Teacher Concern</div>
+            <div class="check"><input type="checkbox" name="property" value="true"> Damaged Property</div>
+            <div class="check"><input type="checkbox" name="facilities" value="true"> Facility</div>
+            <div class="check"><input type="checkbox" name="canteen" value="true"> Canteen</div>
+            <div class="check"><input type="checkbox" name="internetLab" value="true"> Internet/Computer Lab</div>
+        </div>
+        <div id="complaintList">
+            <div class="no-data">No complaints received yet. Waiting for live activity...</div>
+        </div>
+    </div>
+
+    <div class="details">
+        <p id="fullName"></p>
+        <p>Student ID: <span id="studentId"></span></p>
+        <p>Grade/Year & Section: <span id="section"></span></p>
+        <p>Email: <span id="email"></span></p>
+        <p>Contact Number: <span id="contactNumber"></span></p>
+        <p>Date of Complaint: <span id="complaintDate"></span></p>
+    </div>
+    <script>
+        // Connect Render server
+        const socket = io('https://rekserver.onrender.com');
+
+        const statusBadge = document.getElementById('status');
+        const complaintList = document.getElementById('complaintList');
+
+
+        // Monitor connection status
+        socket.on('connect', () => {
+            statusBadge.innerText = "🟢 Connected (Live)";
+            statusBadge.className = "status-badge";
+            console.log("Connected to WebSocket tunnel successfully.");
+        });
+
+        socket.on('disconnect', () => {
+            statusBadge.innerText = "🔴 Disconnected";
+            statusBadge.className = "status-badge disconnected";
+        });
+
+        // --- CARD ---
+        function renderComplaintCard(data) {
+            const noDataMessage = document.querySelector('.no-data');
+            if (noDataMessage) {
+                noDataMessage.remove();
+            }
+
+            let severityClass = 'severity-low';
+            if (data.score <= 24) {
+                severityClass = 'severity-low';
+            } else if (data.score >= 25 && data.score < 49) {
+                severityClass = 'severity-medium';
+            } else if (data.score >= 50 && data.score < 74) {
+                severityClass = 'severity-high';
+            } else if (data.score >= 75) {
+                severityClass = 'severity-critical';
+            }
+
+            function generateComplaintCode() {
+                const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+                const bytes = new Uint8Array(8);
+
+                crypto.getRandomValues(bytes);
+
+                let id = "";
+
+                for (const b of bytes) {
+                    id += chars[b % chars.length];
+                }
+
+                return `ER-${id}`;
+            }
+
+
+            const complaintId = data.trackingid || data.trackingId;
+            const categories = data.category || [];
+            const studentId = data.studentId || data.studentID || "N/A";
+
+            // create card
+            const card = document.createElement('div');
+            card.className = `complaint-card ${severityClass}`;
+
+            card.id = complaintId;
+
+            card.innerHTML = `
+        <div class="card-header">
+            <span class="card-name">
+                ${data.isAnonymous ? '🕵️ Anonymous Student' : '👤 ' + data.name} <span class="status"></span> 
+                <div class="badge">
+                    <input type="radio" name="status-${complaintId}" value="Pending" ${data.status === 'Pending' ? 'checked' : ''}> Pending
+                    <input type="radio" name="status-${complaintId}" value="Resolved" ${data.status === 'Resolved' ? 'checked' : ''}> Resolved
+                    <input type="radio" name="status-${complaintId}" value="Rejected" ${data.status === 'Rejected' ? 'checked' : ''}> Rejected
+                </div>
+            </span>
+            <span>📅 ${data.date}</span>
+        </div>
+
+        <div class="card-body">
+            <p><strong>Tracking ID:</strong> ${complaintId}</p>
+            <p class="Category"><strong>Category:</strong> ${categories || 'N/A'}</p>
+            <p><strong> Reason:</strong> ${data.reason || 'N/A'}</p>
+             <div class="show-details">expand</div> 
+             
+             <div class="details">
+            <p><strong>Student ID:</strong> ${studentId}</p>
+            <p><strong> Email:</strong> ${data.email || 'N/A'}</p>
+            <p><strong> Contact Number:</strong> ${data.contactNumber || 'N/A'}</p>
+            <p>${data.text || "<em>No written details provided.</em>"}</p>
+            </div>
+               
+        </div>
+
+        <div class="card-footer">
+            <span><strong>Section:</strong> ${data.section || 'N/A'}</span>
+            <span class="score-tag">Severity Score: ${data.score}</span>
+        </div>
+    `;
+
+            const statusRadios = card.querySelectorAll(`input[name="status-${complaintId}"]`);
+
+            statusRadios.forEach(radio => {
+                radio.addEventListener('change', () => {
+                    console.log("Sending:", complaintId, radio.value);
+
+                    socket.emit('updateStatus', {
+                        trackingId: complaintId,
+                        status: radio.value
+                    });
+                });
+            });
+
+            const statusElement = card.querySelector('.status');
+            if (data.status === 'Resolved') {
+                statusElement.innerHTML = '<span>🟢</span>';
+            } else if (data.status === 'Pending') {
+                statusElement.innerHTML = '<span>🟡</span>';
+            } else if (data.status === 'Rejected') {
+                statusElement.innerHTML = '<span>🔴</span>';
+            }
+
+
+            complaintList.insertBefore(card, complaintList.firstChild);
+
+            const show = card.querySelector('.show-details');
+            const text = card.querySelector('.details');
+            show.addEventListener('click', () => {
+                text.style.display = text.style.display === 'block' ? 'none' : 'block';
+            });
+        }
+
+        socket.on('newComplaint', (data) => {
+            console.log("Received live broadcast data:", data);
+            renderComplaintCard(data);
+        });
+
+
+        socket.on('complaintHistory', (historyArray) => {
+            console.log("Received database history:", historyArray);
+
+
+            complaintList.innerHTML = '';
+
+
+            historyArray.reverse().forEach(complaint => {
+                renderComplaintCard(complaint);
+            });
+        });
+
+
+        socket.on('statusUpdated', ({ trackingId, status }) => {
+            const card = document.getElementById(trackingId);
+
+            if (!card) return;
+
+            const statusElement = card.querySelector(".status");
+
+            if (status === "Resolved") {
+                statusElement.innerHTML = "🟢 Resolved";
+            } else if (status === "Pending") {
+                statusElement.innerHTML = "🟡 Pending";
+            } else if (status === "Rejected") {
+                statusElement.innerHTML = "🔴 Rejected";
+            }
+        });
+
+        window.addEventListener("load", () => {
+            if (window.location.hash) {
+                const target = document.querySelector(window.location.hash);
+
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: "smooth",
+                        block: "center"
+                    });
+
+                    target.style.outline = "4px solid gold";
+
+                    setTimeout(() => {
+                        target.style.outline = "";
+                    }, 4000);
+                }
+            }
+        });
+
+
+    </script>
+</body>
+
+</html>
