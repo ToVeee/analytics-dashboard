@@ -168,7 +168,7 @@
             display: none;
         }
 
-        #categories .check {
+        #categories .filter {
             background: #800000;
             color: white;
             padding: 5px 10px;
@@ -197,17 +197,19 @@
 
 
         <div id="categories">
-            <div class="check"><input type="checkbox" name="noise" value="true"> Violence</div>
-            <div class="check"><input type="checkbox" name="cleanliness" value="true"> Sanitation</div>
-            <div class="check"><input type="checkbox" name="academic" value="true"> Academic Concern</div>
-            <div class="check"><input type="checkbox" name="bullying" value="true"> Bullying</div>
-            <div class="check"><input type="checkbox" name="harassment" value="true"> Harassment</div>
-            <div class="check"><input type="checkbox" name="dispute" value="true"> Student Dispute</div>
-            <div class="check"><input type="checkbox" name="teacherConcern" value="true"> Teacher Concern</div>
-            <div class="check"><input type="checkbox" name="property" value="true"> Damaged Property</div>
-            <div class="check"><input type="checkbox" name="facilities" value="true"> Facility</div>
-            <div class="check"><input type="checkbox" name="canteen" value="true"> Canteen</div>
-            <div class="check"><input type="checkbox" name="internetLab" value="true"> Internet/Computer Lab</div>
+            <div class="filter"><input type="checkbox" name="noise" value="Violence"> Violence</div>
+            <div class="filter"><input type="checkbox" name="cleanliness" value="Sanitation"> Sanitation</div>
+            <div class="filter"><input type="checkbox" name="academic" value="Academic Concern"> Academic Concern</div>
+            <div class="filter"><input type="checkbox" name="bullying" value="Bullying"> Bullying</div>
+            <div class="filter"><input type="checkbox" name="harassment" value="Harassment"> Harassment</div>
+            <div class="filter"><input type="checkbox" name="dispute" value="Student Dispute"> Student Dispute</div>
+            <div class="filter"><input type="checkbox" name="teacherConcern" value="Teacher Concern"> Teacher Concern
+            </div>
+            <div class="filter"><input type="checkbox" name="property" value="Damaged Property"> Damaged Property</div>
+            <div class="filter"><input type="checkbox" name="facilities" value="Facility"> Facility</div>
+            <div class="filter"><input type="checkbox" name="canteen" value="Canteen"> Canteen</div>
+            <div class="filter"><input type="checkbox" name="internetLab" value="Internet/Computer Lab">
+                Internet/Computer Lab</div>
         </div>
         <div id="complaintList">
             <div class="no-data">No complaints received yet. Waiting for live activity...</div>
@@ -287,6 +289,7 @@
             card.id = complaintId;
 
             card.innerHTML = `
+            <div class="item" data-category="${categories}">
         <div class="card-header">
             <span class="card-name">
                 ${data.isAnonymous ? '🕵️ Anonymous Student' : '👤 ' + data.name} <span class="status"></span> 
@@ -318,20 +321,39 @@
             <span><strong>Section:</strong> ${data.section || 'N/A'}</span>
             <span class="score-tag">Severity Score: ${data.score}</span>
         </div>
+        </div>
     `;
 
-            const statusRadios = card.querySelectorAll(`input[name="status-${complaintId}"]`);
 
-            statusRadios.forEach(radio => {
-                radio.addEventListener('change', () => {
-                    console.log("Sending:", complaintId, radio.value);
+            const categbox = document.querySelectorAll('#categories input[type="checkbox"]');
+            const item = card.querySelector('.item');
+            function filterItems() {
+                const activeFilters = Array.from(categbox)
+                    .filter(box => box.checked)
+                    .map(box => box.value);
 
-                    socket.emit('updateStatus', {
-                        trackingId: complaintId,
-                        status: radio.value
-                    });
-                });
+                const itemCategory = item.dataset.category;
+                if (
+                    activeFilters.length === 0 ||
+                    activeFilters.includes(itemCategory)
+                ) {
+                    card.style.display = "";
+                } else {
+                    card.style.display = "none";
+                }
+            }
+
+            categbox.forEach(box => {
+                box.addEventListener("change", filterItems);
             });
+            // Apply the filter immediately
+            filterItems();
+
+
+            function filter() {
+                const categoryCheckboxes = document.querySelectorAll('#categories input[type="checkbox"]');
+                const cardCategories = card.getElementsByClassName('card-header')[0].className.split(' ');
+            }
 
             const statusElement = card.querySelector('.status');
             if (data.status === 'Resolved') {
