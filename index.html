@@ -325,6 +325,29 @@
     `;
 
 
+
+            const statusRadios = card.querySelectorAll(`input[name="status-${complaintId}"]`);
+
+            statusRadios.forEach(radio => {
+                radio.addEventListener('change', () => {
+                    console.log("Sending:", complaintId, radio.value);
+
+                    socket.emit('updateStatus', {
+                        trackingId: complaintId,
+                        status: radio.value
+                    });
+                });
+            });
+
+            const statusElement = card.querySelector('.status');
+            if (data.status === 'Resolved') {
+                statusElement.innerHTML = '<span>🟢</span>';
+            } else if (data.status === 'Pending') {
+                statusElement.innerHTML = '<span>🟡</span>';
+            } else if (data.status === 'Rejected') {
+                statusElement.innerHTML = '<span>🔴</span>';
+            }
+
             const categbox = document.querySelectorAll('#categories input[type="checkbox"]');
             const item = card.querySelector('.item');
             function filterItems() {
@@ -333,10 +356,7 @@
                     .map(box => box.value);
 
                 const itemCategory = item.dataset.category;
-                if (
-                    activeFilters.length === 0 ||
-                    activeFilters.includes(itemCategory)
-                ) {
+                if (activeFilters.length === 0 || activeFilters.includes(itemCategory)) {
                     card.style.display = "";
                 } else {
                     card.style.display = "none";
@@ -353,15 +373,6 @@
             function filter() {
                 const categoryCheckboxes = document.querySelectorAll('#categories input[type="checkbox"]');
                 const cardCategories = card.getElementsByClassName('card-header')[0].className.split(' ');
-            }
-
-            const statusElement = card.querySelector('.status');
-            if (data.status === 'Resolved') {
-                statusElement.innerHTML = '<span>🟢</span>';
-            } else if (data.status === 'Pending') {
-                statusElement.innerHTML = '<span>🟡</span>';
-            } else if (data.status === 'Rejected') {
-                statusElement.innerHTML = '<span>🔴</span>';
             }
 
 
@@ -394,18 +405,22 @@
 
 
         socket.on('statusUpdated', ({ trackingId, status }) => {
+
+            console.log("statusUpdated:", trackingId, status);
+
             const card = document.getElementById(trackingId);
+            console.log("Card found:", card);
 
             if (!card) return;
 
             const statusElement = card.querySelector(".status");
 
             if (status === "Resolved") {
-                statusElement.innerHTML = "🟢 Resolved";
+                statusElement.innerHTML = "🟢";
             } else if (status === "Pending") {
-                statusElement.innerHTML = "🟡 Pending";
+                statusElement.innerHTML = "🟡";
             } else if (status === "Rejected") {
-                statusElement.innerHTML = "🔴 Rejected";
+                statusElement.innerHTML = "🔴";
             }
         });
 
