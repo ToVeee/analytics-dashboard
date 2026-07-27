@@ -288,6 +288,7 @@
 
             card.id = complaintId;
 
+
             card.innerHTML = `
             <div class="item" data-category="${categories}">
         <div class="card-header">
@@ -306,7 +307,6 @@
             <p><strong>Tracking ID:</strong> ${complaintId}</p>
             <p class="Category"><strong>Category:</strong> ${categories || 'N/A'}</p>
             <p><strong> Reason:</strong> ${data.reason || 'N/A'}</p>
-             <div class="show-details">expand</div> 
              
              <div class="details">
             <p><strong>Student ID:</strong> ${studentId}</p>
@@ -314,16 +314,15 @@
             <p><strong> Contact Number:</strong> ${data.contactNumber || 'N/A'}</p>
             <p>${data.text || "<em>No written details provided.</em>"}</p>
             </div>
-               
+               <div class="show-details">expand</div> 
         </div>
 
         <div class="card-footer">
-            <span><strong>Section:</strong> ${data.section || 'N/A'}</span>
+            <span><strong>Section:</strong> ${data.section || 'N/A'}</span> <button class="del" onclick="deleteCard('${complaintId}')">Delete</button>
             <span class="score-tag">Severity Score: ${data.score}</span>
         </div>
         </div>
     `;
-
 
 
             const statusRadios = card.querySelectorAll(`input[name="status-${complaintId}"]`);
@@ -385,6 +384,17 @@
             });
         }
 
+        function deleteCard(id) {
+            const cardToDelete = document.getElementById(id);
+            if (cardToDelete) {
+
+                socket.emit('deleteComplaint', { trackingId: id });
+                console.log(`Complaint card with ID ${id} deleted.`);
+            } else {
+                console.log(`No complaint card found with ID ${id}.`);
+            }
+        }
+
         socket.on('newComplaint', (data) => {
             console.log("Received live broadcast data:", data);
             renderComplaintCard(data);
@@ -421,6 +431,14 @@
                 statusElement.innerHTML = "🟡";
             } else if (status === "Rejected") {
                 statusElement.innerHTML = "🔴";
+            }
+        });
+
+        socket.on("cardDeleted", ({ trackingId }) => {
+            const card = document.getElementById(trackingId);
+
+            if (card) {
+                card.remove();
             }
         });
 
