@@ -1,237 +1,337 @@
-const socket = io('https://rekserver.onrender.com');
+(function () {
+    const socket = io('https://rekserver.onrender.com');
 
-const statusBadge = document.getElementById('status');
-const complaintList = document.getElementById('complaintList');
+    const statusBadge = document.getElementById('status');
+    const complaintList = document.getElementById('complaintList');
+    const statsEls = {
+        total: document.getElementById('statTotal'),
+        pending: document.getElementById('statPending'),
+        resolved: document.getElementById('statResolved'),
+        rejected: document.getElementById('statRejected'),
+        critical: document.getElementById('statCritical'),
+        avg: document.getElementById('statAvg'),
+    };
+    const categoryBars = document.getElementById('categoryBars');
+    const searchInput = document.getElementById('searchInput');
+    const sortSelect = document.getElementById('sortSelect');
+    const clearFiltersBtn = document.getElementById('clearFilters');
+    const filterToggle = document.getElementById('filterToggle');
+    const filterPanel = document.getElementById('filterPanel');
+    const categoryBoxes = document.querySelectorAll('#categories input[type="checkbox"]');
+    const severityBoxes = document.querySelectorAll('#severityFilters input[type="checkbox"]');
 
+    // ---------- state ----------
+    const complaints = new Map();   // id -> normalized complaint
+    const order = [];               // ids, oldest -> newest (arrival order)
+    const expandedIds = new Set();  // ids with details panel open
+    let historyLoaded = false;
 
-// Monitor connection status
-socket.on('connect', () => {
-    statusBadge.innerText = "🟢 Connected (Live)";
-    statusBadge.className = "status-badge";
-    console.log("Connected to WebSocket tunnel successfully.");
-});
-
-socket.on('disconnect', () => {
-    statusBadge.innerText = "🔴 Disconnected";
-    statusBadge.className = "status-badge disconnected";
-});
-
-// --- CARD ---
-function renderComplaintCard(data) {
-    const noDataMessage = document.querySelector('.no-data');
-    if (noDataMessage) {
-        noDataMessage.remove();
+    // ---------- helpers ----------
+    function esc(str) {
+        return String(str ?? '').replace(/[&<>"']/g, ch => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[ch]));
     }
 
-    let severityClass = 'severity-low';
-    if (data.score <= 24) {
-        severityClass = 'severity-low';
-    } else if (data.score >= 25 && data.score < 49) {
-        severityClass = 'severity-medium';
-    } else if (data.score >= 50 && data.score < 74) {
-        severityClass = 'severity-high';
-    } else if (data.score >= 75) {
-        severityClass = 'severity-critical';
+    function getId(raw) { return raw.trackingid || raw.trackingId; }
+
+    function normalize(raw) {
+        const category = Array.isArray(raw.category)
+            ? raw.category.filter(Boolean)
+            : (raw.category ? [raw.category] : []);
+        return {
+            name: raw.name,
+            isAnonymous: !!raw.isAnonymous,
+            status: raw.status || 'Pending',
+            date: raw.date,
+            reason: raw.reason,
+            category,
+            studentId: raw.studentId || raw.studentID || 'N/A',
+            email: raw.email,
+            contactNumber: raw.contactNumber,
+            text: raw.text,
+            section: raw.section,
+            score: Number(raw.score) || 0,
+        };
     }
 
-    function generateComplaintCode() {
-        const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-        const bytes = new Uint8Array(8);
+    function getSeverityLevel(score) {
+        if (score >= 75) return 'critical';
+        if (score >= 50) return 'high';
+        if (score >= 25) return 'medium';
+        return 'low';
+    }
 
-        crypto.getRandomValues(bytes);
+    function getCheckedValues(nodeList) {
+        return Array.from(nodeList).filter(b => b.checked).map(b => b.value);
+    }
 
-        let id = "";
-
-        for (const b of bytes) {
-            id += chars[b % chars.length];
+    // ---------- stats ----------
+    function computeStats() {
+        let total = 0, pending = 0, resolved = 0, rejected = 0, critical = 0, scoreSum = 0;
+        const catCounts = {};
+        for (const c of complaints.values()) {
+            total++;
+            if (c.status === 'Pending') pending++;
+            else if (c.status === 'Resolved') resolved++;
+            else if (c.status === 'Rejected') rejected++;
+            scoreSum += c.score;
+            if (c.score >= 75) critical++;
+            c.category.forEach(cat => { catCounts[cat] = (catCounts[cat] || 0) + 1; });
         }
-
-        return `ER-${id}`;
+        return { total, pending, resolved, rejected, critical, avg: total ? Math.round(scoreSum / total) : 0, catCounts };
     }
 
+    function renderStats() {
+        const s = computeStats();
+        statsEls.total.textContent = s.total;
+        statsEls.pending.textContent = s.pending;
+        statsEls.resolved.textContent = s.resolved;
+        statsEls.rejected.textContent = s.rejected;
+        statsEls.critical.textContent = s.critical;
+        statsEls.avg.textContent = s.avg;
 
-    const complaintId = data.trackingid || data.trackingId;
-    const categories = data.category || [];
-    const studentId = data.studentId || data.studentID || "N/A";
+        const entries = Object.entries(s.catCounts).sort((a, b) => b[1] - a[1]);
+        if (!entries.length) {
+            categoryBars.innerHTML = '<div class="bars-empty">No cases yet.</div>';
+            return;
+        }
+        const max = entries[0][1];
+        categoryBars.innerHTML = entries.map(([cat, count]) => `
+      <div class="bar-row">
+        <span class="bar-label">${esc(cat)}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:${(count / max * 100).toFixed(0)}%"></div></div>
+        <span class="bar-count">${count}</span>
+      </div>
+    `).join('');
+    }
 
-    // create card
-    const card = document.createElement('div');
-    card.className = `complaint-card ${severityClass}`;
+    // ---------- card rendering ----------
+    function buildCardElement(c, id) {
+        const level = getSeverityLevel(c.score);
+        const statusClass = (c.status || 'Pending').toLowerCase();
+        const catAttr = c.category.map(x => x.trim()).join('|');
+        const expanded = expandedIds.has(id);
 
-    card.id = complaintId;
+        const el = document.createElement('article');
+        el.className = `complaint-card severity-${level}`;
+        el.dataset.id = id;
+        el.dataset.category = catAttr;
 
-
-    card.innerHTML = `
-            <div class="item" data-category="${categories}">
-        <div class="card-header">
-            <span class="card-name">
-                ${data.isAnonymous ? '🕵️ Anonymous Student' : '👤 ' + data.name} <span class="status"></span> 
-                <div class="badge">
-                    <input type="radio" name="status-${complaintId}" value="Pending" ${data.status === 'Pending' ? 'checked' : ''}> Pending
-                    <input type="radio" name="status-${complaintId}" value="Resolved" ${data.status === 'Resolved' ? 'checked' : ''}> Resolved
-                    <input type="radio" name="status-${complaintId}" value="Rejected" ${data.status === 'Rejected' ? 'checked' : ''}> Rejected
-                </div>
-            </span>
-            <span>📅 ${data.date}</span>
+        el.innerHTML = `
+      <span class="stamp stamp-${level}">${level}</span>
+      <div class="card-head">
+        <div class="who">
+          <span class="avatar">${c.isAnonymous ? '🕶️' : '👤'}</span>
+          <div>
+            <p class="name">${c.isAnonymous ? 'Anonymous Student' : esc(c.name || 'Unknown')}</p>
+            <p class="meta">${esc(id)} · ${esc(c.section || 'N/A')}</p>
+          </div>
         </div>
+        <span class="status-dot ${statusClass}" title="${esc(c.status)}"></span>
+      </div>
 
-        <div class="card-body">
-            <p><strong>Tracking ID:</strong> ${complaintId}</p>
-            <p class="Category"><strong>Category:</strong> ${categories || 'N/A'}</p>
-            <p><strong> Reason:</strong> ${data.reason || 'N/A'}</p>
-             
-             <div class="details">
-            <p><strong>Student ID:</strong> ${studentId}</p>
-            <p><strong> Email:</strong> ${data.email || 'N/A'}</p>
-            <p><strong> Contact Number:</strong> ${data.contactNumber || 'N/A'}</p>
-            <p>${data.text || "<em>No written details provided.</em>"}</p>
-            </div>
-               <div class="show-details">expand</div> 
-        </div>
+      <div class="status-control" role="radiogroup" aria-label="Case status">
+        <label class="seg"><input type="radio" name="status-${esc(id)}" value="Pending" ${c.status === 'Pending' ? 'checked' : ''}> Pending</label>
+        <label class="seg"><input type="radio" name="status-${esc(id)}" value="Resolved" ${c.status === 'Resolved' ? 'checked' : ''}> Resolved</label>
+        <label class="seg"><input type="radio" name="status-${esc(id)}" value="Rejected" ${c.status === 'Rejected' ? 'checked' : ''}> Rejected</label>
+      </div>
 
-        <div class="card-footer">
-            <span><strong>Section:</strong> ${data.section || 'N/A'}</span> 
-            <div>
-            <button class="del" onclick="deleteCard('${complaintId}')"></button>
-            <span class="score-tag">Severity Score: ${data.score}</span>
-            </div>
-        </div>
-        </div>
+      <p class="reason"><strong>Reason:</strong> ${esc(c.reason || 'N/A')}</p>
+      <p class="category-line"><strong>Category:</strong> ${c.category.length ? esc(c.category.join(', ')) : 'N/A'}</p>
+
+      <button class="toggle-details" aria-expanded="${expanded}">${expanded ? 'Hide details' : 'View details'}</button>
+      <div class="details" ${expanded ? '' : 'hidden'}>
+        <dl>
+          <dt>Student ID</dt><dd>${esc(c.studentId)}</dd>
+          <dt>Email</dt><dd>${esc(c.email || 'N/A')}</dd>
+          <dt>Contact</dt><dd>${esc(c.contactNumber || 'N/A')}</dd>
+          <dt>Date filed</dt><dd>${esc(c.date || 'N/A')}</dd>
+        </dl>
+        <p class="narrative">${c.text ? esc(c.text) : '<em>No written details provided.</em>'}</p>
+      </div>
+
+      <div class="card-foot">
+        <span class="score">Severity ${c.score}</span>
+        <button class="delete-btn" aria-label="Delete complaint ${esc(id)}" data-id="${esc(id)}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+          </svg>
+        </button>
+      </div>
     `;
+        return el;
+    }
 
+    function getVisibleIds() {
+        let ids = [...order];
+        const q = searchInput.value.trim().toLowerCase();
+        const activeCats = getCheckedValues(categoryBoxes);
+        const activeSevs = getCheckedValues(severityBoxes);
 
-    const statusRadios = card.querySelectorAll(`input[name="status-${complaintId}"]`);
-
-    statusRadios.forEach(radio => {
-        radio.addEventListener('change', () => {
-            console.log("Sending:", complaintId, radio.value);
-
-            socket.emit('updateStatus', {
-                trackingId: complaintId,
-                status: radio.value
-            });
+        ids = ids.filter(id => {
+            const c = complaints.get(id);
+            if (!c) return false;
+            if (q) {
+                const hay = `${c.name || ''} ${id} ${c.studentId || ''}`.toLowerCase();
+                if (!hay.includes(q)) return false;
+            }
+            if (activeCats.length && !c.category.some(cat => activeCats.includes(cat))) return false;
+            if (activeSevs.length && !activeSevs.includes(getSeverityLevel(c.score))) return false;
+            return true;
         });
-    });
 
-    const statusElement = card.querySelector('.status');
-    if (data.status === 'Resolved') {
-        statusElement.innerHTML = '<span>🟢</span>';
-    } else if (data.status === 'Pending') {
-        statusElement.innerHTML = '<span>🟡</span>';
-    } else if (data.status === 'Rejected') {
-        statusElement.innerHTML = '<span>🔴</span>';
-    }
-
-    const categbox = document.querySelectorAll('#categories input[type="checkbox"]');
-    const item = card.querySelector('.item');
-    function filterItems() {
-        const activeFilters = Array.from(categbox)
-            .filter(box => box.checked)
-            .map(box => box.value);
-
-        const itemCategory = item.dataset.category;
-        if (activeFilters.length === 0 || activeFilters.includes(itemCategory)) {
-            card.style.display = "";
+        if (sortSelect.value === 'severity') {
+            ids.sort((a, b) => complaints.get(b).score - complaints.get(a).score);
         } else {
-            card.style.display = "none";
+            ids.reverse(); // newest first
         }
+        return ids;
     }
 
-    categbox.forEach(box => {
-        box.addEventListener("change", filterItems);
-    });
-    // Apply the filter immediately
-    filterItems();
-
-
-    function filter() {
-        const categoryCheckboxes = document.querySelectorAll('#categories input[type="checkbox"]');
-        const cardCategories = card.getElementsByClassName('card-header')[0].className.split(' ');
-    }
-
-
-    complaintList.insertBefore(card, complaintList.firstChild);
-
-    const show = card.querySelector('.show-details');
-    const text = card.querySelector('.details');
-    show.addEventListener('click', () => {
-        text.style.display = text.style.display === 'block' ? 'none' : 'block';
-    });
-}
-
-function deleteCard(id) {
-    const cardToDelete = document.getElementById(id);
-    if (cardToDelete) {
-
-        socket.emit('deleteComplaint', { trackingId: id });
-        console.log(`Complaint card with ID ${id} deleted.`);
-    } else {
-        console.log(`No complaint card found with ID ${id}.`);
-    }
-}
-
-socket.on('newComplaint', (data) => {
-    console.log("Received live broadcast data:", data);
-    renderComplaintCard(data);
-});
-
-
-socket.on('complaintHistory', (historyArray) => {
-    console.log("Received database history:", historyArray);
-
-
-    complaintList.innerHTML = '';
-
-
-    historyArray.reverse().forEach(complaint => {
-        renderComplaintCard(complaint);
-    });
-});
-
-
-socket.on('statusUpdated', ({ trackingId, status }) => {
-
-    console.log("statusUpdated:", trackingId, status);
-
-    const card = document.getElementById(trackingId);
-    console.log("Card found:", card);
-
-    if (!card) return;
-
-    const statusElement = card.querySelector(".status");
-
-    if (status === "Resolved") {
-        statusElement.innerHTML = "🟢";
-    } else if (status === "Pending") {
-        statusElement.innerHTML = "🟡";
-    } else if (status === "Rejected") {
-        statusElement.innerHTML = "🔴";
-    }
-});
-
-socket.on("cardDeleted", ({ trackingId }) => {
-    const card = document.getElementById(trackingId);
-
-    if (card) {
-        card.remove();
-    }
-});
-
-window.addEventListener("load", () => {
-    if (window.location.hash) {
-        const target = document.querySelector(window.location.hash);
-
-        if (target) {
-            target.scrollIntoView({
-                behavior: "smooth",
-                block: "center"
-            });
-
-            target.style.outline = "4px solid gold";
-
-            setTimeout(() => {
-                target.style.outline = "";
-            }, 4000);
+    function renderList() {
+        const ids = getVisibleIds();
+        complaintList.innerHTML = '';
+        if (!order.length) {
+            complaintList.innerHTML = '<div class="no-data">No complaints received yet. New cases will appear here in real time.</div>';
+            return;
         }
+        if (!ids.length) {
+            complaintList.innerHTML = '<div class="no-data">No cases match your filters.</div>';
+            return;
+        }
+        const frag = document.createDocumentFragment();
+        ids.forEach(id => frag.appendChild(buildCardElement(complaints.get(id), id)));
+        complaintList.appendChild(frag);
+        maybeScrollToHash();
     }
-});
+
+    function renderAll() {
+        renderStats();
+        renderList();
+    }
+
+    function maybeScrollToHash() {
+        if (!historyLoaded) return;
+        const hash = window.location.hash;
+        if (!hash) return;
+        const target = document.querySelector(hash);
+        if (!target) return;
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target.classList.add('highlight');
+        setTimeout(() => target.classList.remove('highlight'), 4000);
+    }
+
+    // ---------- socket events ----------
+    socket.on('connect', () => {
+        statusBadge.textContent = '🟢 Connected (Live)';
+        statusBadge.className = 'status-badge connected';
+    });
+
+    socket.on('disconnect', () => {
+        statusBadge.textContent = '🔴 Disconnected';
+        statusBadge.className = 'status-badge';
+    });
+
+    socket.on('complaintHistory', (historyArray) => {
+        complaints.clear();
+        order.length = 0;
+        (historyArray || []).forEach(raw => {
+            const id = getId(raw);
+            if (!id) return;
+            complaints.set(id, normalize(raw));
+            order.push(id);
+        });
+        historyLoaded = true;
+        renderAll();
+    });
+
+    socket.on('newComplaint', (raw) => {
+        const id = getId(raw);
+        if (!id) return;
+        complaints.set(id, normalize(raw));
+        if (!order.includes(id)) order.push(id);
+        renderAll();
+    });
+
+    socket.on('statusUpdated', ({ trackingId, status }) => {
+        const c = complaints.get(trackingId);
+        if (!c) return;
+        c.status = status;
+        renderAll();
+    });
+
+    socket.on('cardDeleted', ({ trackingId }) => {
+        complaints.delete(trackingId);
+        const idx = order.indexOf(trackingId);
+        if (idx > -1) order.splice(idx, 1);
+        expandedIds.delete(trackingId);
+        renderAll();
+    });
+
+    // ---------- delegated card interactions ----------
+    complaintList.addEventListener('change', (e) => {
+        const radio = e.target.closest('input[type="radio"]');
+        if (!radio) return;
+        const card = radio.closest('.complaint-card');
+        const id = card.dataset.id;
+        const status = radio.value;
+        socket.emit('updateStatus', { trackingId: id, status });
+        const c = complaints.get(id);
+        if (c) { c.status = status; renderStats(); }
+        const dot = card.querySelector('.status-dot');
+        dot.className = `status-dot ${status.toLowerCase()}`;
+        dot.title = status;
+    });
+
+    complaintList.addEventListener('click', (e) => {
+        const delBtn = e.target.closest('.delete-btn');
+        if (delBtn) {
+            const id = delBtn.dataset.id;
+            if (window.confirm('Delete this complaint record? This cannot be undone.')) {
+                socket.emit('deleteComplaint', { trackingId: id });
+            }
+            return;
+        }
+        const toggleBtn = e.target.closest('.toggle-details');
+        if (toggleBtn) {
+            const card = toggleBtn.closest('.complaint-card');
+            const id = card.dataset.id;
+            const details = card.querySelector('.details');
+            const isHidden = details.hasAttribute('hidden');
+            if (isHidden) {
+                details.removeAttribute('hidden');
+                expandedIds.add(id);
+                toggleBtn.setAttribute('aria-expanded', 'true');
+                toggleBtn.textContent = 'Hide details';
+            } else {
+                details.setAttribute('hidden', '');
+                expandedIds.delete(id);
+                toggleBtn.setAttribute('aria-expanded', 'false');
+                toggleBtn.textContent = 'View details';
+            }
+        }
+    });
+
+    // ---------- filter controls ----------
+    searchInput.addEventListener('input', renderList);
+    sortSelect.addEventListener('change', renderList);
+    categoryBoxes.forEach(box => box.addEventListener('change', renderList));
+    severityBoxes.forEach(box => box.addEventListener('change', renderList));
+
+    clearFiltersBtn.addEventListener('click', () => {
+        searchInput.value = '';
+        categoryBoxes.forEach(b => b.checked = false);
+        severityBoxes.forEach(b => b.checked = false);
+        sortSelect.value = 'newest';
+        renderList();
+    });
+
+    filterToggle.addEventListener('click', () => {
+        const open = filterPanel.classList.toggle('open');
+        filterToggle.setAttribute('aria-expanded', String(open));
+    });
+
+    window.addEventListener('hashchange', maybeScrollToHash);
+})();
