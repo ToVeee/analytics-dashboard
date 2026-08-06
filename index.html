@@ -2,61 +2,111 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Analytics Dashboard</title>
-    <link rel="stylesheet" href="full.css">
-    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>eComplaint Monitor — Live Case Feed</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap"
+    rel="stylesheet">
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <link rel="stylesheet" href="full.css">
 </head>
 
 <body>
 
-    <div class="container">
-        <header>
-            <div>
-                <h1>Analytics Dashboard</h1>
-                <p>Real-time School Complaint Monitoring Feed</p>
-            </div>
-            <div id="status" class="status-badge disconnected">Connecting...</div>
-        </header>
+  <div class="app">
 
-        <h2>Live Feed</h2>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">EC</span>
+        <div>
+          <h1>eComplaint Monitor</h1>
+          <p class="subtitle">Live case feed — Registrar's Office</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <div id="status" class="status-badge">Connecting…</div>
+        <button id="filterToggle" class="icon-btn" aria-expanded="false" aria-controls="filterPanel">☰ Filters</button>
+      </div>
+    </header>
 
-        <div id="sidebar" style="width:70px">
-            <a href="#" class="navBarItem "><i class="fa fa-priotity"></i></a>
-            <a href="#" class="navBarItem "><i class="fa fa-search"></i></a>
-            <a href="#" class="navBarItem "><i class="fa fa-trend"></i></a>
+    <section class="stats" id="stats" aria-label="Case statistics">
+      <div class="stat-card"><span class="stat-value" id="statTotal">0</span><span class="stat-label">Total cases</span>
+      </div>
+      <div class="stat-card pending"><span class="stat-value" id="statPending">0</span><span
+          class="stat-label">Pending</span></div>
+      <div class="stat-card resolved"><span class="stat-value" id="statResolved">0</span><span
+          class="stat-label">Resolved</span></div>
+      <div class="stat-card rejected"><span class="stat-value" id="statRejected">0</span><span
+          class="stat-label">Rejected</span></div>
+      <div class="stat-card critical"><span class="stat-value" id="statCritical">0</span><span
+          class="stat-label">Critical</span></div>
+      <div class="stat-card"><span class="stat-value" id="statAvg">0</span><span class="stat-label">Avg. severity</span>
+      </div>
+    </section>
+
+    <section class="breakdown" aria-label="Category breakdown">
+      <h2>Category Breakdown</h2>
+      <div class="bars" id="categoryBars">
+        <div class="bars-empty">No cases yet.</div>
+      </div>
+    </section>
+
+    <aside id="filterPanel" class="filter-panel">
+      <div class="filter-panel-inner">
+        <div class="search-row">
+          <span class="filter-label">Search</span>
+          <input type="search" id="searchInput" placeholder="Search by name, tracking ID, or student ID…">
         </div>
 
-        <div id="categories">
-            <div class="filter"><input type="checkbox" name="noise" value="Violence"> Violence</div>
-            <div class="filter"><input type="checkbox" name="cleanliness" value="Sanitation"> Sanitation</div>
-            <div class="filter"><input type="checkbox" name="academic" value="Academic Concern"> Academic Concern</div>
-            <div class="filter"><input type="checkbox" name="bullying" value="Bullying"> Bullying</div>
-            <div class="filter"><input type="checkbox" name="harassment" value="Harassment"> Harassment</div>
-            <div class="filter"><input type="checkbox" name="dispute" value="Student Dispute"> Student Dispute</div>
-            <div class="filter"><input type="checkbox" name="teacherConcern" value="Teacher Concern"> Teacher Concern
-            </div>
-            <div class="filter"><input type="checkbox" name="property" value="Damaged Property"> Damaged Property</div>
-            <div class="filter"><input type="checkbox" name="facilities" value="Facility"> Facility</div>
-            <div class="filter"><input type="checkbox" name="canteen" value="Canteen"> Canteen</div>
-            <div class="filter"><input type="checkbox" name="internetLab" value="Internet/Computer Lab">
-                Internet/Computer Lab</div>
+        <div>
+          <span class="filter-label">Category</span>
+          <div class="filter-group" id="categories">
+            <label class="chip"><input type="checkbox" value="Violence"> Violence</label>
+            <label class="chip"><input type="checkbox" value="Sanitation"> Sanitation</label>
+            <label class="chip"><input type="checkbox" value="Academic Concern"> Academic Concern</label>
+            <label class="chip"><input type="checkbox" value="Bullying"> Bullying</label>
+            <label class="chip"><input type="checkbox" value="Harassment"> Harassment</label>
+            <label class="chip"><input type="checkbox" value="Student Dispute"> Student Dispute</label>
+            <label class="chip"><input type="checkbox" value="Teacher Concern"> Teacher Concern</label>
+            <label class="chip"><input type="checkbox" value="Damaged Property"> Damaged Property</label>
+            <label class="chip"><input type="checkbox" value="Facility"> Facility</label>
+            <label class="chip"><input type="checkbox" value="Canteen"> Canteen</label>
+            <label class="chip"><input type="checkbox" value="Internet/Computer Lab"> Internet/Computer Lab</label>
+          </div>
         </div>
-        <div id="complaintList">
-            <div class="no-data">No complaints received yet. Waiting for live activity...</div>
+
+        <div>
+          <span class="filter-label">Severity</span>
+          <div class="filter-group" id="severityFilters">
+            <label class="chip"><input type="checkbox" value="low"> Low</label>
+            <label class="chip"><input type="checkbox" value="medium"> Medium</label>
+            <label class="chip"><input type="checkbox" value="high"> High</label>
+            <label class="chip"><input type="checkbox" value="critical"> Critical</label>
+          </div>
         </div>
+
+        <div class="sort-row">
+          <label for="sortSelect" class="filter-label" style="margin-bottom:0;">Sort</label>
+          <select id="sortSelect">
+            <option value="newest">Newest first</option>
+            <option value="severity">Highest severity</option>
+          </select>
+        </div>
+
+        <button id="clearFilters" class="text-btn">Clear all filters</button>
+      </div>
+    </aside>
+
+    <h2 class="section-title">Live Feed</h2>
+    <div id="complaintList">
+      <div class="no-data">No complaints received yet. New cases will appear here in real time.</div>
     </div>
 
-    <div class="details">
-        <p id="fullName"></p>
-        <p>Student ID: <span id="studentId"></span></p>
-        <p>Grade/Year & Section: <span id="section"></span></p>
-        <p>Email: <span id="email"></span></p>
-        <p>Contact Number: <span id="contactNumber"></span></p>
-        <p>Date of Complaint: <span id="complaintDate"></span></p>
-    </div>
-    <script src="full.js"></script>
+  </div>
+  <script src="full.js"></script>
 </body>
 
 </html>
