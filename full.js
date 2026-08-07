@@ -1,5 +1,5 @@
 (function () {
-    const socket = io('rekserver-production.up.railway.app');
+    const socket = io('https://rekserver-production.up.railway.app');
 
     const statusBadge = document.getElementById('status');
     const complaintList = document.getElementById('complaintList');
