@@ -1,5 +1,5 @@
 (function () {
-    const socket = io('https://rekserver.onrender.com');
+    const socket = io('rekserver-production.up.railway.app');
 
     const statusBadge = document.getElementById('status');
     const complaintList = document.getElementById('complaintList');
