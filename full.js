@@ -52,6 +52,7 @@
             text: raw.text,
             section: raw.section,
             score: Number(raw.score) || 0,
+            imageUrl: raw.imageUrl || raw.image_url || null,
         };
     }
 
@@ -139,6 +140,8 @@
 
       <p class="reason"><strong>Reason:</strong> ${esc(c.reason || 'N/A')}</p>
       <p class="category-line"><strong>Category:</strong> ${c.category.length ? esc(c.category.join(', ')) : 'N/A'}</p>
+
+      ${c.imageUrl ? `<img class="card-thumb" src="${esc(c.imageUrl)}" alt="Attached photo for complaint ${esc(id)}" loading="lazy">` : ''}
 
       <button class="toggle-details" aria-expanded="${expanded}">${expanded ? 'Hide details' : 'View details'}</button>
       <div class="details" ${expanded ? '' : 'hidden'}>
@@ -270,6 +273,17 @@
         renderAll();
     });
 
+    // ---------- image lightbox ----------
+    // These elements only exist once you add the matching markup to index.html —
+    // until then, this stays null and clicking a photo just opens it in a new tab instead.
+    const lightbox = document.getElementById('lightbox');
+    const lightboxImg = document.getElementById('lightboxImg');
+    const lightboxClose = document.getElementById('lightboxClose');
+    if (lightbox && lightboxClose) {
+        lightboxClose.addEventListener('click', () => lightbox.classList.remove('open'));
+        lightbox.addEventListener('click', (e) => { if (e.target === lightbox) lightbox.classList.remove('open'); });
+    }
+
     // ---------- delegated card interactions ----------
     complaintList.addEventListener('change', (e) => {
         const radio = e.target.closest('input[type="radio"]');
@@ -286,6 +300,17 @@
     });
 
     complaintList.addEventListener('click', (e) => {
+        const thumb = e.target.closest('.card-thumb');
+        if (thumb) {
+            if (lightbox && lightboxImg) {
+                lightboxImg.src = thumb.src;
+                lightboxImg.alt = thumb.alt;
+                lightbox.classList.add('open');
+            } else {
+                window.open(thumb.src, '_blank');
+            }
+            return;
+        }
         const delBtn = e.target.closest('.delete-btn');
         if (delBtn) {
             const id = delBtn.dataset.id;
