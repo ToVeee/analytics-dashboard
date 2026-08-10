@@ -53,6 +53,7 @@
             section: raw.section,
             score: Number(raw.score) || 0,
             imageUrl: raw.imageUrl || raw.image_url || null,
+            feedback: raw.feedback || '',
         };
     }
 
@@ -136,6 +137,12 @@
         <label class="seg"><input type="radio" name="status-${esc(id)}" value="Pending" ${c.status === 'Pending' ? 'checked' : ''}> Pending</label>
         <label class="seg"><input type="radio" name="status-${esc(id)}" value="Resolved" ${c.status === 'Resolved' ? 'checked' : ''}> Resolved</label>
         <label class="seg"><input type="radio" name="status-${esc(id)}" value="Rejected" ${c.status === 'Rejected' ? 'checked' : ''}> Rejected</label>
+      </div>
+
+      <div class="feedback-control">
+        <label class="feedback-label" for="feedback-${esc(id)}">Feedback to student</label>
+        <textarea class="feedback-input" id="feedback-${esc(id)}" placeholder="Let the student know what happened with their complaint…">${esc(c.feedback)}</textarea>
+        <button type="button" class="save-feedback-btn" data-id="${esc(id)}">Save Feedback</button>
       </div>
 
       <p class="reason"><strong>Reason:</strong> ${esc(c.reason || 'N/A')}</p>
@@ -258,10 +265,11 @@
         renderAll();
     });
 
-    socket.on('statusUpdated', ({ trackingId, status }) => {
+    socket.on('statusUpdated', ({ trackingId, status, feedback }) => {
         const c = complaints.get(trackingId);
         if (!c) return;
         c.status = status;
+        if (feedback !== undefined) c.feedback = feedback;
         renderAll();
     });
 
@@ -291,7 +299,10 @@
         const card = radio.closest('.complaint-card');
         const id = card.dataset.id;
         const status = radio.value;
-        socket.emit('updateStatus', { trackingId: id, status });
+        const feedbackInput = card.querySelector('.feedback-input');
+        // Send whatever feedback is currently typed along with the status change,
+        // so switching status never silently wipes out unsaved feedback text.
+        socket.emit('updateStatus', { trackingId: id, status, feedback: feedbackInput.value });
         const c = complaints.get(id);
         if (c) { c.status = status; renderStats(); }
         const dot = card.querySelector('.status-dot');
@@ -309,6 +320,18 @@
             } else {
                 window.open(thumb.src, '_blank');
             }
+            return;
+        }
+        const saveFeedbackBtn = e.target.closest('.save-feedback-btn');
+        if (saveFeedbackBtn) {
+            const id = saveFeedbackBtn.dataset.id;
+            const card = saveFeedbackBtn.closest('.complaint-card');
+            const feedbackInput = card.querySelector('.feedback-input');
+            const currentStatus = card.querySelector('input[type="radio"]:checked')?.value || 'Pending';
+            socket.emit('updateStatus', { trackingId: id, status: currentStatus, feedback: feedbackInput.value });
+            const original = saveFeedbackBtn.textContent;
+            saveFeedbackBtn.textContent = 'Saved!';
+            setTimeout(() => { saveFeedbackBtn.textContent = original; }, 1500);
             return;
         }
         const delBtn = e.target.closest('.delete-btn');
