@@ -1,5 +1,5 @@
 (function () {
-    const socket = io('https://rekserver.onrender.com');
+    const socket = io('https://rekserver.enzonic.dev');
 
     const statusBadge = document.getElementById('status');
     const complaintList = document.getElementById('complaintList');
