@@ -1,5 +1,5 @@
 (function () {
-    const socket = io('https://thousand-types-created-nuclear.trycloudflare.com');
+    const socket = io('https://rekserver.dpdns.org');
 
     const statusBadge = document.getElementById('status');
     const complaintList = document.getElementById('complaintList');
