@@ -7,7 +7,7 @@
 
     async function serverUrl() {
         try {
-            const response = await fetch(`${RENDER}/health`, {
+            const response = await fetch(`${RENDER}`, {
                 signal: AbortSignal.timeout(3000),
             });
             if (!response.ok) throw new Error('Server health check failed');
