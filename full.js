@@ -1,21 +1,20 @@
 (async function () {
 
-    const LOCAL = 'https://api.rekserver.dpdns.org/render';
+    const LOCAL = 'https://api.rekserver.dpdns.org';
     const RENDER = 'https://rekserver.onrender.com';
-
-
 
     async function serverUrl() {
         try {
-            const response = await fetch(`${RENDER}`, {
+            const response = await fetch(`${RENDER}/health`, {
                 signal: AbortSignal.timeout(3000),
             });
-            if (!response.ok) throw new Error('Server health check failed');
+
+            if (!response.ok) throw new Error('Health check failed');
+
             return RENDER;
         }
         catch (err) {
-
-            console.warn('Render server not reachable, falling back to local server:', err);
+            console.warn('Render unreachable. Falling back to local server:', err);
             return LOCAL;
         }
     }
